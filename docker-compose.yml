@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: mb-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mb_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mb_password}
+      POSTGRES_DB: ${POSTGRES_DB:-mb_compass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/db_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mb_user -d mb_compass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mb-network
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mb-streamlit
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: ${DEBUG:-true}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-mb_compass}
+      POSTGRES_USER: ${POSTGRES_USER:-mb_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mb_password}
+      DATABRICKS_HOST: ${DATABRICKS_HOST}
+      DATABRICKS_TOKEN: ${DATABRICKS_TOKEN}
+      DATABRICKS_CATALOG: ${DATABRICKS_CATALOG:-apac}
+      DATABRICKS_SCHEMA: ${DATABRICKS_SCHEMA:-default}
+      AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME}
+      AZURE_STORAGE_ACCOUNT_KEY: ${AZURE_STORAGE_ACCOUNT_KEY}
+      AZURE_STORAGE_CONTAINER: ${AZURE_STORAGE_CONTAINER:-usethisone}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT}
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET}
+    ports:
+      - "8501:8501"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/.streamlit
+    networks:
+      - mb-network
+
+volumes:
+  postgres_data:
+
+networks:
+  mb-network:
+    driver: bridge
