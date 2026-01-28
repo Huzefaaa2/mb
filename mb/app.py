@@ -6,8 +6,22 @@ import streamlit as st
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+import logging
 
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Run startup configuration checks
+from config.startup_checks import print_startup_check
+if not print_startup_check(verbose=False):
+    st.error(
+        "🚨 Critical configuration errors detected. "
+        "Please check logs and update .env file."
+    )
+    st.stop()
 
 st.set_page_config(
     page_title="Magic Bus Compass 360",
@@ -32,19 +46,19 @@ if "user_role" not in st.session_state:
 st.sidebar.markdown("---")
 
 if st.session_state.user_id is None:
-    st.sidebar.info("👤 Not logged in")
+    st.sidebar.info("User Not logged in")
     
     col1, col2 = st.sidebar.columns(2)
     with col1:
-        if st.button("🔓 Login", use_container_width=True):
+        if st.button("Login", use_container_width=True):
             st.switch_page("pages/0_login.py")
     with col2:
-        if st.button("📝 Register", use_container_width=True):
+        if st.button("Register", use_container_width=True):
             st.switch_page("pages/1_register.py")
 else:
-    st.sidebar.success(f"✓ Logged in")
+    st.sidebar.success(f"Logged in")
     
-    if st.sidebar.button("🚪 Logout", use_container_width=True):
+    if st.sidebar.button("Logout", use_container_width=True):
         st.session_state.user_id = None
         st.session_state.user_role = None
         st.rerun()

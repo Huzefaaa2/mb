@@ -11,6 +11,7 @@ import uuid
 import qrcode
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
+from typing import Optional
 from datetime import datetime, timedelta
 import psycopg2
 from psycopg2 import sql
@@ -21,6 +22,14 @@ import logging
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Import blob storage manager for optional resume archival
+try:
+    from app.data.blob_storage import get_blob_storage_manager
+    BLOB_STORAGE_AVAILABLE = True
+except ImportError:
+    BLOB_STORAGE_AVAILABLE = False
+    logger.warning("Blob storage module not available. Resume archival will be skipped.")
 
 st.set_page_config(
     page_title="Student Registration | Magic Bus Compass 360",
@@ -330,6 +339,59 @@ def insert_student_registration(student_data, student_id, login_id, conn):
         logger.error(f"Database insert error: {e}")
         raise
 
+def archive_resume_to_blob(resume_file, student_id: str) -> Optional[str]:
+    """
+    Archive uploaded resume to writable blob storage.
+    
+    Args:
+        resume_file: Streamlit UploadedFile object
+        student_id: Student ID for blob path organization
+    
+    Returns:
+        URL of archived blob, or None if storage not available
+    
+    Raises:
+        RuntimeError: If writable storage is not configured and user tries to upload
+    """
+    if not resume_file or not BLOB_STORAGE_AVAILABLE:
+        return None
+    
+    try:
+        blob_manager = get_blob_storage_manager()
+        
+        # Check if writable storage is configured
+        if not blob_manager.write_client:
+            logger.warning(
+                f"Writable storage not configured. Resume for {student_id} will not be archived."
+            )
+            return None
+        
+        # Create blob path: resumes/{year}/{student_id}/{filename}
+        timestamp = datetime.now()
+        blob_name = f"resumes/{timestamp.year}/{student_id}/{resume_file.name}"
+        
+        # Upload file to writable storage
+        file_data = BytesIO(resume_file.getvalue())
+        blob_url = blob_manager.upload_blob(
+            blob_name=blob_name,
+            data=file_data,
+            overwrite=True
+        )
+        
+        logger.info(f"Resume archived for student {student_id}: {blob_url}")
+        return blob_url
+    
+    except RuntimeError as e:
+        # Write operation failed due to missing credentials
+        logger.error(f"Cannot archive resume: {e}")
+        st.warning(
+            f"⚠️ Resume archival unavailable. Please contact support if this persists."
+        )
+        return None
+    except Exception as e:
+        logger.error(f"Resume archival error: {e}")
+        return None
+
 # ============================================
 # PAGE LAYOUT
 # ============================================
@@ -560,12 +622,18 @@ with tab2:
                             user_id = insert_student_registration(student_data, student_id, login_id, conn)
                             conn.close()
                             
+                            # Archive resume to blob storage (optional, with safety checks)
+                            resume_url = None
+                            if uploaded_file and BLOB_STORAGE_AVAILABLE:
+                                resume_url = archive_resume_to_blob(uploaded_file, student_id)
+                            
                             st.session_state.registration_data = {
                                 "student_id": student_id,
                                 "login_id": login_id,
                                 "password_hint": password_hint,
                                 "student_data": student_data,
-                                "user_id": user_id
+                                "user_id": user_id,
+                                "resume_url": resume_url
                             }
                             
                             st.success("✅ Registration successful! Generating your ID card...")

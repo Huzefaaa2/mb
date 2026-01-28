@@ -7,23 +7,47 @@ class AzureSettings(BaseSettings):
     client_id: str = ""
     client_secret: str = ""
     subscription_id: str = ""
+    primary_subscription_id: str = ""
+    shared_services_subscription_id: str = ""
     
     class Config:
         env_prefix = "AZURE_"
 
 class AzureStorageSettings(BaseSettings):
-    account_name: str = "defaultstoragehackathon"
-    account_key: str = ""
-    container: str = "usethisone"
+    # Defaults point to the provided read-only account in BH-SharedServices
+    readonly_account_name: str = "defaultstoragehackathon"
+    readonly_account_key: str = ""
+    readonly_container: str = "usethisone"
+
+    # Writable account should be set to a storage account in BH-IN-Hack For Good
+    writable_account_name: Optional[str] = None
+    writable_account_key: Optional[str] = None
+    writable_container: Optional[str] = None
+
     region: str = "apac"
     
     @property
-    def connection_string(self) -> str:
-        return f"DefaultEndpointsProtocol=https;AccountName={self.account_name};AccountKey={self.account_key};EndpointSuffix=core.windows.net"
+    def read_connection_string(self) -> str:
+        return f"DefaultEndpointsProtocol=https;AccountName={self.readonly_account_name};AccountKey={self.readonly_account_key};EndpointSuffix=core.windows.net"
     
     @property
-    def blob_url(self) -> str:
-        return f"https://{self.account_name}.blob.core.windows.net/{self.container}/{self.region}"
+    def read_blob_url(self) -> str:
+        return f"https://{self.readonly_account_name}.blob.core.windows.net/{self.readonly_container}/{self.region}"
+
+    @property
+    def write_connection_string(self) -> str:
+        # Prefer explicit writable account; fall back to readonly (legacy behavior) if not set.
+        if self.writable_account_name:
+            key = self.writable_account_key or ""
+            return f"DefaultEndpointsProtocol=https;AccountName={self.writable_account_name};AccountKey={key};EndpointSuffix=core.windows.net"
+        return self.read_connection_string
+    
+    @property
+    def write_blob_url(self) -> str:
+        if self.writable_account_name and self.writable_container:
+            return f"https://{self.writable_account_name}.blob.core.windows.net/{self.writable_container}/{self.region}"
+        # Fallback to readonly blob url (no writable configured)
+        return self.read_blob_url
     
     class Config:
         env_prefix = "AZURE_STORAGE_"
