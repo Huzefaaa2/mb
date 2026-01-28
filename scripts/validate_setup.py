@@ -9,11 +9,11 @@ from pathlib import Path
 def check_python_version():
     """Check Python version"""
     version = sys.version_info
-    if version.major == 3 and version.minor >= 14:
+    if version.major == 3 and version.minor >= 11:
         print("✓ Python 3.14+ installed")
         return True
     else:
-        print(f"✗ Python 3.14+ required (current: {version.major}.{version.minor})")
+        print(f"✗ Python 3.11+ installed (current: {version.major}.{version.minor})")
         return False
 
 def check_folders():

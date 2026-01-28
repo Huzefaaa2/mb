@@ -1,0 +1,46 @@
+# Core
+streamlit>=1.28.0
+python-dotenv>=1.0.0
+pydantic>=2.12.0
+pydantic-settings>=2.12.0
+
+# Data (already installed via conda: numpy, pandas, scikit-learn, xgboost, pillow)
+polars>=0.20.0
+
+# Databricks
+databricks-sql-connector>=3.0.0
+
+# Database
+psycopg2-binary>=2.9.0
+SQLAlchemy>=2.0.0
+alembic>=1.13.0
+
+# Azure
+azure-identity>=1.14.0
+azure-storage-blob>=12.19.0
+azure-keyvault-secrets>=4.7.0
+
+# Data Generation (Synthetic)
+faker>=20.1.0
+sdv>=1.4.0
+pydbgen>=0.2.11
+
+# Utils
+python-dateutil>=2.8.0
+requests>=2.31.0
+PyPDF2>=2.0.0
+python-docx>=0.8.11
+pdfplumber>=0.10.0
+qrcode>=7.4.0
+
+# Visualization
+plotly>=5.18.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# Logging
+python-json-logger>=2.0.7
