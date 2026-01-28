@@ -6,8 +6,8 @@
 
 param(
     [string]$ResourceGroupName = "mb-compass-rg",
-    [string]$StorageAccountName = "mbcompassstore$(Get-Random -Minimum 100 -Maximum 999)",
-    [string]$Location = "eastus",
+    [string]$StorageAccountName = "mbcompasswrite$(Get-Random -Minimum 100 -Maximum 999)",
+    [string]$Location = "southeastasia",
     [string]$SubscriptionId = "5293e508-036d-433a-a64d-6afe15f3fdc9",
     [string]$ContainerName = "application-data"
 )
@@ -24,12 +24,19 @@ Write-Host ""
 
 # 1. Set the subscription context
 Write-Host "[1/6] Setting Azure subscription context..."
-az account set --subscription $SubscriptionId
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "Failed to set subscription context"
-    exit 1
+$currentSub = az account show --query "id" -o tsv
+if ($currentSub -eq $SubscriptionId) {
+    Write-Host "[OK] Already on correct subscription: $SubscriptionId"
 }
-Write-Host "[OK] Subscription context set"
+else {
+    Write-Host "Switching to subscription: $SubscriptionId"
+    az account set --subscription $SubscriptionId
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to set subscription context"
+        exit 1
+    }
+    Write-Host "[OK] Subscription context set"
+}
 Write-Host ""
 
 # 2. Create Resource Group (if not exists)
@@ -51,15 +58,18 @@ Write-Host ""
 
 # 3. Create Storage Account
 Write-Host "[3/6] Creating storage account..."
-az storage account create `
+Write-Host "Command: az storage account create --name $StorageAccountName --resource-group $ResourceGroupName --location $Location --sku Standard_LRS --kind StorageV2 --access-tier Hot"
+
+$createResult = az storage account create `
     --name $StorageAccountName `
     --resource-group $ResourceGroupName `
     --location $Location `
     --sku Standard_LRS `
     --kind StorageV2 `
-    --access-tier Hot
+    --access-tier Hot 2>&1
 
 if ($LASTEXITCODE -ne 0) {
+    Write-Host "Output: $createResult"
     Write-Error "Failed to create storage account"
     exit 1
 }
