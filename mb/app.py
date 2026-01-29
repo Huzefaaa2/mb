@@ -55,11 +55,57 @@ else:
         st.rerun()
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### Pages")
-st.sidebar.page_link("pages/0_login.py", label=" Login")
-st.sidebar.page_link("pages/1_register.py", label=" Register")
+st.sidebar.markdown("### Navigation")
+st.sidebar.page_link("pages/0_login.py", label="🔐 Login")
+
+# Registration with sub-sections
+st.sidebar.markdown("#### 📝 Registration")
+st.sidebar.page_link("pages/1_register.py", label="📝 Register")
+
+col1, col2 = st.sidebar.columns([0.3, 3.7])
+with col1:
+    st.markdown("")
+with col2:
+    if st.button("✅ Email Confirmation", key="btn_confirmation"):
+        st.switch_page("_confirmation.py")
+
+st.sidebar.page_link("pages/5_feedback_survey.py", label="📋 Feedback Survey")
+
 if st.session_state.user_id:
-    st.sidebar.page_link("pages/2_youth_dashboard.py", label=" Dashboard")
+    st.sidebar.markdown("#### 📊 Youth Dashboard")
+    
+    # Main dashboard link
+    st.sidebar.page_link("pages/2_youth_dashboard.py", label="📊 Main Dashboard")
+    
+    # Sub-sections with indentation
+    st.sidebar.markdown("**Sub-sections:**")
+    col1, col2 = st.sidebar.columns([0.3, 3.7])
+    with col1:
+        st.markdown("")
+    with col2:
+        if st.button("📚 Learning Modules", key="btn_learning"):
+            st.session_state.scroll_to = "learning_modules"
+            st.switch_page("pages/2_youth_dashboard.py")
+    
+    col1, col2 = st.sidebar.columns([0.3, 3.7])
+    with col1:
+        st.markdown("")
+    with col2:
+        if st.button("🎯 Career Survey", key="btn_career"):
+            st.switch_page("pages/_career_survey.py")
+    
+    col1, col2 = st.sidebar.columns([0.3, 3.7])
+    with col1:
+        st.markdown("")
+    with col2:
+        if st.button("🔍 Job Search (JobGPT)", key="btn_jobgpt"):
+            st.session_state.scroll_to = "jobgpt"
+            st.switch_page("pages/2_youth_dashboard.py")
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### Admin & Intelligence")
+st.sidebar.page_link("pages/3_magicbus_admin.py", label="📈 Magic Bus Staff")
+st.sidebar.page_link("pages/4_decision_intelligence.py", label="🧠 Decision Intelligence")
 
 st.markdown("---")
 

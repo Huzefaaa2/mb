@@ -13,8 +13,8 @@ from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 from typing import Optional
 from datetime import datetime, timedelta
-import psycopg2
-from psycopg2 import sql
+import sqlite3
+from pathlib import Path
 import os
 from dotenv import load_dotenv
 import logging
@@ -22,6 +22,9 @@ import logging
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# SQLite database path
+DB_PATH = Path(__file__).parent.parent.parent / "data" / "mb_compass.db"
 
 # Import blob storage manager for optional resume archival
 try:
@@ -188,32 +191,55 @@ def generate_login_credentials(student_id):
     password_hint = "DOB(DDMMYYYY) + last4 of login ID"
     return login_id, password_hint
 
-def generate_id_card(student_data, student_id):
-    """Generate PNG ID card with QR code"""
+def generate_id_card(student_data, student_id, passport_photo=None):
+    """Generate PNG ID card with QR code and optional passport photo"""
     try:
-        card = Image.new('RGB', (1000, 600), color='white')
+        card = Image.new('RGB', (1200, 650), color='white')
         draw = ImageDraw.Draw(card)
         
         try:
-            title_font = ImageFont.truetype("arial.ttf", 28)
-            name_font = ImageFont.truetype("arial.ttf", 24)
+            title_font = ImageFont.truetype("arial.ttf", 32)
+            name_font = ImageFont.truetype("arial.ttf", 26)
             label_font = ImageFont.truetype("arial.ttf", 14)
+            small_font = ImageFont.truetype("arial.ttf", 12)
         except:
-            title_font = name_font = label_font = ImageFont.load_default()
+            title_font = name_font = label_font = small_font = ImageFont.load_default()
         
-        margin = 40
-        y_position = 50
+        # Draw header background
+        header_color = '#003366'
+        draw.rectangle([(0, 0), (1200, 80)], fill=header_color)
         
-        draw.text((margin, y_position), "Magic Bus Compass 360", font=title_font, fill='#003366')
-        draw.text((margin, y_position + 35), "Student ID Card", font=label_font, fill='#666666')
-        y_position += 80
+        # Draw header text
+        draw.text((40, 15), "Magic Bus Compass 360", font=title_font, fill='white')
+        draw.text((40, 50), "Student ID Card", font=small_font, fill='white')
         
+        # Draw passport photo if provided
+        if passport_photo:
+            try:
+                photo = Image.open(BytesIO(passport_photo))
+                # Resize to passport size (4x5 ratio, about 150x190)
+                photo.thumbnail((150, 190), Image.Resampling.LANCZOS)
+                photo_x, photo_y = 40, 110
+                card.paste(photo, (photo_x, photo_y))
+                # Draw border around photo
+                draw.rectangle([(photo_x-2, photo_y-2), (photo_x+photo.width+2, photo_y+photo.height+2)], 
+                              outline='#003366', width=2)
+            except Exception as e:
+                logger.warning(f"Could not insert passport photo: {e}")
+        
+        # Student info starts at different position depending on photo
+        info_start_x = 220 if passport_photo else 40
+        y_position = 110
+        
+        # Name
         full_name = f"{student_data.get('first_name', '')} {student_data.get('last_name', '')}"
-        draw.text((margin, y_position), full_name, font=name_font, fill='black')
-        y_position += 50
+        draw.text((info_start_x, y_position), full_name, font=name_font, fill='black')
+        y_position += 45
         
+        # Info fields
         info_fields = [
             ("ID:", student_id),
+            ("DOB:", str(student_data.get('dob', 'N/A'))),
             ("Email:", student_data.get('email', 'N/A')),
             ("Phone:", student_data.get('phone', 'N/A')),
             ("Institution:", student_data.get('institution', 'N/A')),
@@ -221,36 +247,42 @@ def generate_id_card(student_data, student_id):
         ]
         
         for label, value in info_fields:
-            draw.text((margin, y_position), label, font=label_font, fill='#666666')
-            draw.text((margin + 100, y_position), str(value)[:30], font=label_font, fill='black')
-            y_position += 30
+            draw.text((info_start_x, y_position), label, font=label_font, fill='#666666')
+            value_str = str(value)[:35]
+            draw.text((info_start_x + 120, y_position), value_str, font=label_font, fill='black')
+            y_position += 25
         
+        # QR code
         qr_data = {
             "student_id": student_id,
             "name": full_name,
             "email": student_data.get('email'),
-            "institution": student_data.get('institution')
+            "institution": student_data.get('institution'),
+            "dob": str(student_data.get('dob'))
         }
         
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_L,
-            box_size=10,
-            border=4,
+            box_size=8,
+            border=2,
         )
         qr.add_data(json.dumps(qr_data))
         qr.make(fit=True)
         qr_img = qr.make_image(fill_color="black", back_color="white")
-        qr_img = qr_img.resize((200, 200))
+        qr_img = qr_img.resize((180, 180))
         
-        qr_position = (700, 150)
+        qr_position = (950, 110)
         card.paste(qr_img, qr_position)
         
+        # Draw border
         border_color = '#003366'
-        draw.rectangle([(0, 0), (999, 599)], outline=border_color, width=3)
+        draw.rectangle([(0, 0), (1199, 649)], outline=border_color, width=4)
         
-        footer_text = f"Issued: {datetime.now().strftime('%Y-%m-%d')}"
-        draw.text((margin, 550), footer_text, font=label_font, fill='#999999')
+        # Footer
+        footer_text = f"Issued: {datetime.now().strftime('%d-%b-%Y')}"
+        draw.text((40, 600), footer_text, font=label_font, fill='#999999')
+        draw.text((950, 600), "Valid for 2 years", font=label_font, fill='#999999')
         
         img_bytes = BytesIO()
         card.save(img_bytes, format='PNG')
@@ -262,16 +294,135 @@ def generate_id_card(student_data, student_id):
         logger.error(f"ID card generation error: {e}")
         return None
 
-def connect_database():
-    """Connect to PostgreSQL"""
+def generate_id_card_pdf(student_data, student_id, passport_photo=None):
+    """Generate PDF version of ID card"""
     try:
-        conn = psycopg2.connect(
-            host=os.getenv("POSTGRES_HOST", "localhost"),
-            port=int(os.getenv("POSTGRES_PORT", 5432)),
-            database=os.getenv("POSTGRES_DB", "mb_compass"),
-            user=os.getenv("POSTGRES_USER", "mb_user"),
-            password=os.getenv("POSTGRES_PASSWORD", "")
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.units import inch
+        
+        pdf_buffer = BytesIO()
+        c = canvas.Canvas(pdf_buffer, pagesize=letter)
+        
+        # Page background
+        c.setFillColorRGB(1, 1, 1)
+        c.rect(0, 0, letter[0], letter[1], fill=1)
+        
+        # Header
+        c.setFillColorRGB(0, 51, 102)
+        c.rect(0, letter[1]-0.8*inch, letter[0], 0.8*inch, fill=1)
+        
+        # Header text
+        c.setFillColorRGB(1, 1, 1)
+        c.setFont("Helvetica-Bold", 20)
+        c.drawString(0.4*inch, letter[1]-0.5*inch, "Magic Bus Compass 360 - Student ID Card")
+        
+        # Set black text
+        c.setFillColorRGB(0, 0, 0)
+        c.setFont("Helvetica-Bold", 14)
+        
+        # Photo placeholder or actual photo
+        if passport_photo:
+            try:
+                photo = Image.open(BytesIO(passport_photo))
+                photo.thumbnail((1.2*inch, 1.5*inch), Image.Resampling.LANCZOS)
+                temp_photo = BytesIO()
+                photo.save(temp_photo, format='PNG')
+                temp_photo.seek(0)
+                c.drawImage(temp_photo, 0.4*inch, letter[1]-3.5*inch, width=1.2*inch, height=1.5*inch)
+            except:
+                pass
+        
+        # Student info
+        y_pos = letter[1] - 1.5*inch
+        c.setFont("Helvetica-Bold", 12)
+        full_name = f"{student_data.get('first_name', '')} {student_data.get('last_name', '')}"
+        c.drawString(2*inch, y_pos, f"Name: {full_name}")
+        
+        y_pos -= 0.25*inch
+        c.setFont("Helvetica", 11)
+        
+        info_fields = [
+            ("Student ID:", student_id),
+            ("Email:", student_data.get('email', 'N/A')),
+            ("Phone:", student_data.get('phone', 'N/A')),
+            ("DOB:", str(student_data.get('dob', 'N/A'))),
+            ("Institution:", student_data.get('institution', 'N/A')),
+            ("Education Level:", student_data.get('education_level', 'N/A')),
+        ]
+        
+        for label, value in info_fields:
+            c.drawString(2*inch, y_pos, f"{label} {value}")
+            y_pos -= 0.25*inch
+        
+        # QR code
+        qr_data = {
+            "student_id": student_id,
+            "name": full_name,
+            "email": student_data.get('email'),
+            "institution": student_data.get('institution')
+        }
+        
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=8,
+            border=2,
         )
+        qr.add_data(json.dumps(qr_data))
+        qr.make(fit=True)
+        qr_img = qr.make_image(fill_color="black", back_color="white")
+        
+        qr_buffer = BytesIO()
+        qr_img.save(qr_buffer, format='PNG')
+        qr_buffer.seek(0)
+        
+        c.drawImage(qr_buffer, 5*inch, letter[1]-3.5*inch, width=1.2*inch, height=1.2*inch)
+        
+        # Footer
+        c.setFont("Helvetica", 10)
+        c.drawString(0.4*inch, 0.4*inch, f"Issued: {datetime.now().strftime('%d-%b-%Y')} | Valid for 2 years")
+        
+        c.save()
+        pdf_buffer.seek(0)
+        
+        return pdf_buffer
+    
+    except Exception as e:
+        logger.error(f"PDF generation error: {e}")
+        return None
+
+def init_db():
+    """Initialize SQLite database"""
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(DB_PATH))
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS mb_users (
+            user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            login_id TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            student_id TEXT UNIQUE NOT NULL,
+            role TEXT DEFAULT 'student',
+            email TEXT UNIQUE NOT NULL,
+            full_name TEXT,
+            phone TEXT,
+            dob TEXT,
+            institution TEXT,
+            education_level TEXT,
+            skills TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+def connect_database():
+    """Connect to SQLite database"""
+    try:
+        init_db()
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
         return conn
     except Exception as e:
         logger.error(f"Database connection error: {e}")
@@ -281,7 +432,7 @@ def check_existing_student(email, conn):
     """Check if student already exists"""
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM mb_users WHERE email = %s", (email,))
+        cursor.execute("SELECT * FROM mb_users WHERE email = ?", (email,))
         result = cursor.fetchone()
         cursor.close()
         return result is not None
@@ -294,45 +445,28 @@ def insert_student_registration(student_data, student_id, login_id, conn):
     try:
         cursor = conn.cursor()
         
-        insert_user = sql.SQL("""
+        # Insert user into mb_users table
+        cursor.execute("""
             INSERT INTO mb_users 
-            (student_id, email, phone, login_id, password_hash, role, is_active)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            RETURNING user_id
-        """)
-        
-        cursor.execute(insert_user, (
+            (student_id, email, phone, login_id, password, role, full_name, institution, education_level, skills)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
             student_id,
             student_data.get('email'),
             student_data.get('phone'),
             login_id,
-            "temp_hash",
+            student_data.get('dob', ''),
             'student',
-            True
-        ))
-        
-        user_id = cursor.fetchone()[0]
-        
-        insert_profile = sql.SQL("""
-            INSERT INTO mb_onboarding_profiles
-            (student_id, mb_unique_id, device_access, preferred_language, 
-             consent_given, communication_preference)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """)
-        
-        cursor.execute(insert_profile, (
-            student_id,
-            student_id,
-            student_data.get('device_access', 'mobile'),
-            student_data.get('preferred_language', 'English'),
-            True,
-            student_data.get('communication_preference', 'whatsapp')
+            f"{student_data.get('first_name', '')} {student_data.get('last_name', '')}",
+            student_data.get('institution', ''),
+            student_data.get('education_level', ''),
+            json.dumps(student_data.get('skills', []))
         ))
         
         conn.commit()
         cursor.close()
         
-        return user_id
+        return student_id
     
     except Exception as e:
         conn.rollback()
@@ -497,6 +631,23 @@ with tab2:
                 index=0
             )
         
+        st.markdown("### 📸 Passport Photo")
+        st.write("Upload a passport-size photo (4x5 ratio, min 200x250 pixels)")
+        
+        passport_photo = st.file_uploader(
+            "Choose passport photo",
+            type=["jpg", "jpeg", "png"],
+            help="Maximum 2MB - Passport size photo",
+            key="passport_photo"
+        )
+        
+        if passport_photo:
+            try:
+                img = Image.open(BytesIO(passport_photo.getvalue()))
+                st.image(img, width=150, caption="✓ Photo preview")
+            except:
+                st.warning("⚠️ Could not load image preview")
+        
         st.markdown("### 🎓 Education")
         
         col1, col2, col3 = st.columns(3)
@@ -525,18 +676,22 @@ with tab2:
         
         st.markdown("### 💼 Skills")
         
+        skills_options = [
+            "Python", "Java", "JavaScript", "SQL", "R",
+            "React", "Angular", "Node.js", "Django", "Flask",
+            "AWS", "Azure", "Docker", "Kubernetes",
+            "Data Analysis", "Machine Learning",
+            "Communication", "Leadership", "Teamwork"
+        ]
+        
         default_skills = parsed_resume.get('skills', []) if parsed_resume else []
+        # Filter default skills to only include those in the options
+        default_skills = [skill for skill in default_skills if skill in skills_options][:5]
         
         skills = st.multiselect(
             "Select Your Skills *",
-            [
-                "Python", "Java", "JavaScript", "SQL", "R",
-                "React", "Angular", "Node.js", "Django", "Flask",
-                "AWS", "Azure", "Docker", "Kubernetes",
-                "Data Analysis", "Machine Learning",
-                "Communication", "Leadership", "Teamwork"
-            ],
-            default=default_skills[:5]
+            skills_options,
+            default=default_skills
         )
         
         st.markdown("### 📱 Communication Preferences")
@@ -556,9 +711,9 @@ with tab2:
         
         col1, col2, col3 = st.columns([1, 1, 2])
         with col1:
-            submitted = st.form_submit_button("📝 Register", use_container_width=True)
+            submitted = st.form_submit_button("📝 Register", width="stretch")
         with col2:
-            reset = st.form_submit_button("🔄 Reset Form", use_container_width=True)
+            reset = st.form_submit_button("🔄 Reset Form", width="stretch")
         
         if submitted:
             errors = []
@@ -594,6 +749,11 @@ with tab2:
                     student_id = generate_student_id()
                     login_id, password_hint = generate_login_credentials(student_id)
                     
+                    # Get passport photo bytes if uploaded
+                    passport_photo_bytes = None
+                    if passport_photo:
+                        passport_photo_bytes = passport_photo.getvalue()
+                    
                     student_data = {
                         "first_name": first_name,
                         "last_name": last_name,
@@ -627,13 +787,19 @@ with tab2:
                             if uploaded_file and BLOB_STORAGE_AVAILABLE:
                                 resume_url = archive_resume_to_blob(uploaded_file, student_id)
                             
+                            # Generate ID cards
+                            id_card_png = generate_id_card(student_data, student_id, passport_photo_bytes)
+                            id_card_pdf = generate_id_card_pdf(student_data, student_id, passport_photo_bytes)
+                            
                             st.session_state.registration_data = {
                                 "student_id": student_id,
                                 "login_id": login_id,
                                 "password_hint": password_hint,
                                 "student_data": student_data,
                                 "user_id": user_id,
-                                "resume_url": resume_url
+                                "resume_url": resume_url,
+                                "id_card_png": id_card_png,
+                                "id_card_pdf": id_card_pdf
                             }
                             
                             st.success("✅ Registration successful! Generating your ID card...")
