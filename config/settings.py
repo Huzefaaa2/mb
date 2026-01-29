@@ -2,6 +2,81 @@ from pydantic_settings import BaseSettings
 from typing import Optional
 import os
 
+# ========================
+# PHASE 3 FEATURE FLAGS & CONFIG
+# ========================
+
+# Youth Potential Score™ Configuration
+YOUTH_POTENTIAL_SCORE_ENABLED = True
+YOUTH_POTENTIAL_SCORE_WEIGHTS = {
+    "engagement_probability": 0.25,
+    "retention_likelihood": 0.25,
+    "skill_readiness": 0.25,
+    "placement_fit": 0.25
+}
+YOUTH_POTENTIAL_SCORE_TIERS = {
+    "exceptional": {"min": 80, "max": 100, "icon": "🚀"},
+    "high": {"min": 65, "max": 80, "icon": "📈"},
+    "medium": {"min": 50, "max": 65, "icon": "📊"},
+    "development": {"min": 0, "max": 50, "icon": "🌱"}
+}
+
+# Intelligent Onboarding Orchestrator Configuration
+ONBOARDING_ENABLED = True
+ONBOARDING_PHASES = [
+    "profile_setup",
+    "career_exploration",
+    "skill_assessment",
+    "mentorship_match",
+    "pathway_definition"
+]
+
+# Skill Gap Bridger Configuration
+SKILL_GAP_BRIDGER_ENABLED = True
+SKILL_GAP_LEARNING_PATHS_ENABLED = True
+SKILL_GAP_SUPPORTED_ROLES = [
+    "Software Developer",
+    "Data Analyst",
+    "Business Analyst",
+    "Project Manager",
+    "UX Designer"
+]
+
+# Gamified Retention Engine Configuration
+GAMIFICATION_ENABLED = True
+GAMIFICATION_TARGET_RETENTION = 85  # Target retention rate %
+GAMIFICATION_BASELINE_RETENTION = 65  # Baseline retention rate %
+GAMIFICATION_BADGE_TYPES = [
+    "early_bird",
+    "consistent_learner",
+    "skill_master",
+    "mentor_worthy",
+    "pace_setter",
+    "community_champion"
+]
+
+# Peer Matching Network Configuration
+PEER_MATCHING_ENABLED = True
+PEER_MATCHING_SIMILARITY_THRESHOLD = 0.65  # 0.0-1.0, minimum match score
+PEER_MATCHING_MATCH_TYPES = [
+    "study_buddy",
+    "career_mentor",
+    "skill_peer",
+    "accountability_partner"
+]
+
+# Churn Prevention Configuration
+CHURN_PREVENTION_ENABLED = True
+CHURN_RISK_THRESHOLD = 0.65  # 0.0-1.0, flag as at-risk above this
+CHURN_INTERVENTION_TYPES = [
+    "Mentorship Assignment",
+    "Badge Challenge",
+    "1-on-1 Support",
+    "Career Coaching",
+    "Peer Pairing"
+]
+CHURN_INTERVENTION_SUCCESS_TARGET = 0.75  # 75% success rate
+
 class AzureSettings(BaseSettings):
     tenant_id: str = ""
     client_id: str = ""

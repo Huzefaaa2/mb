@@ -238,6 +238,62 @@ else:
     motivational = get_motivational_message(stats['completed_modules'])
     st.info(f"💡 {motivational}")
     
+    st.markdown("---")
+    
+    # YOUTH POTENTIAL SCORE SECTION
+    st.markdown("### ⭐ Your Youth Potential Score™")
+    
+    try:
+        from mb.decision_dashboard import DecisionDashboard
+        
+        dashboard = DecisionDashboard()
+        
+        # Get potential score for this student
+        student_id = st.session_state.get('student_id') or f"STU{st.session_state.user_id:04d}"
+        
+        # Calculate potential score (simulated based on module progress)
+        engagement_score = min(100, stats['average_progress'] + 20)
+        retention_score = min(100, 65 + (stats['completed_modules'] * 5))
+        skill_readiness = min(100, stats['average_progress'])
+        placement_fit = min(100, 70)
+        
+        overall_score = (engagement_score + retention_score + skill_readiness + placement_fit) / 4
+        
+        # Determine tier
+        if overall_score >= 80:
+            tier = "🚀 Exceptional"
+            tier_color = "#1f77b4"
+        elif overall_score >= 65:
+            tier = "📈 High"
+            tier_color = "#2ca02c"
+        elif overall_score >= 50:
+            tier = "📊 Medium"
+            tier_color = "#ff7f0e"
+        else:
+            tier = "🌱 Development"
+            tier_color = "#d62728"
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Overall Score", f"{overall_score:.1f}/100", delta=tier)
+        
+        with col2:
+            st.metric("Engagement", f"{engagement_score:.0f}%")
+        
+        with col3:
+            st.metric("Retention", f"{retention_score:.0f}%")
+        
+        with col4:
+            st.metric("Skill Ready", f"{skill_readiness:.0f}%")
+        
+        tier_box_html = f"<div style='text-align: center; padding: 15px; background: {tier_color}40; border-radius: 10px; border-left: 5px solid {tier_color};'><h3>{tier}</h3><p>Your current development tier based on engagement, retention, and skill progression.</p></div>"
+        st.markdown(tier_box_html, unsafe_allow_html=True)
+    
+    except Exception as e:
+        st.warning(f"Could not load potential score: {e}")
+        logger.warning(f"Potential score error: {e}")
+    
     # Display badges in expander
     if badges:
         with st.expander(f"🏆 View All {len(badges)} Badges"):
