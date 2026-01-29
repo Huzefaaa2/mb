@@ -9,7 +9,8 @@ from .gamification import (
     get_motivational_message,
     update_streak,
     calculate_retention_impact,
-    trigger_intervention,
+    trigger_churn_intervention,
+    predict_churn_risk,
 )
 from .peer_matching import (
     find_peer_mentors,
@@ -29,7 +30,8 @@ __all__ = [
     "get_motivational_message",
     "update_streak",
     "calculate_retention_impact",
-    "trigger_intervention",
+    "trigger_churn_intervention",
+    "predict_churn_risk",
     "find_peer_mentors",
     "calculate_similarity",
     "match_peers",
