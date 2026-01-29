@@ -506,6 +506,394 @@ class DecisionDashboard:
             conn.close()
 
 
+    # ========================
+    # YOUTH POTENTIAL SCORE™
+    # ========================
+    def calculate_engagement_probability(self, student_id):
+        """
+        Calculate engagement probability (0-100)
+        Metrics: Recent activity (7 days), completion rate, quiz frequency
+        """
+        conn = self.get_connection()
+        try:
+            # Get engagement metrics
+            df = pd.read_sql_query(
+                """SELECT 
+                   COUNT(DISTINCT CASE WHEN datetime(lm.updated_at) > datetime('now', '-7 days') THEN lm.module_id END) as recent_activity,
+                   AVG(lm.progress) as avg_progress,
+                   COUNT(DISTINCT CASE WHEN lm.status = 'completed' THEN lm.module_id END) as completed_modules,
+                   COUNT(DISTINCT lm.module_id) as total_modules
+                   FROM learning_modules lm
+                   WHERE lm.user_id = (SELECT user_id FROM mb_users WHERE student_id = ?)""",
+                conn,
+                params=(student_id,)
+            )
+            
+            if df.empty or df.iloc[0]['total_modules'] == 0:
+                return 25.0  # Default low engagement
+            
+            row = df.iloc[0]
+            recent_activity = row['recent_activity'] or 0
+            avg_progress = row['avg_progress'] or 0
+            completed = row['completed_modules'] or 0
+            total = row['total_modules'] or 1
+            
+            # Score formula: activity (33%) + progress (33%) + completion (34%)
+            activity_score = min(100, (recent_activity / max(total, 1)) * 100)
+            progress_score = avg_progress
+            completion_score = (completed / total) * 100
+            
+            engagement = (activity_score * 0.33) + (progress_score * 0.33) + (completion_score * 0.34)
+            return min(100, max(0, engagement))
+        except Exception as e:
+            logger.error(f"Error calculating engagement: {e}")
+            return 0.0
+        finally:
+            conn.close()
+    
+    def calculate_retention_likelihood(self, student_id):
+        """
+        Calculate retention likelihood (0-100)
+        Logic: Inverse of dropout risk based on modules started/completed
+        """
+        conn = self.get_connection()
+        try:
+            df = pd.read_sql_query(
+                """SELECT risk_score FROM student_dropout_risk WHERE student_id = ?""",
+                conn,
+                params=(student_id,)
+            )
+            
+            if df.empty:
+                return 50.0  # Default neutral
+            
+            risk_score = df.iloc[0]['risk_score'] or 5
+            # Convert 1-9 risk scale to 0-100 retention likelihood
+            # Risk 1 → 100% retention, Risk 9 → 0% retention
+            retention = max(0, 100 - ((risk_score - 1) / 8 * 100))
+            return retention
+        except Exception as e:
+            logger.error(f"Error calculating retention: {e}")
+            return 50.0
+        finally:
+            conn.close()
+    
+    def calculate_skill_readiness(self, student_id):
+        """
+        Calculate skill readiness (0-100)
+        Metrics: Extracted skills count (0-10 maps to 0-100) + sector fit score
+        """
+        conn = self.get_connection()
+        try:
+            # Get extracted skills and sector fit
+            df = pd.read_sql_query(
+                """SELECT 
+                   COALESCE(LENGTH(extracted_skills) - LENGTH(REPLACE(extracted_skills, ',', '')) + 1, 0) as skill_count,
+                   COALESCE((SELECT sector_fit_score FROM student_sector_fit ssf WHERE ssf.student_id = ?), 50) as sector_fit
+                   FROM mb_onboarding_profiles
+                   WHERE student_id = ?""",
+                conn,
+                params=(student_id, student_id)
+            )
+            
+            if df.empty:
+                return 40.0  # Default moderate skill
+            
+            row = df.iloc[0]
+            skill_count = row['skill_count'] or 0
+            sector_fit = row['sector_fit'] or 50
+            
+            # Skills component: 0-10 skills → 0-100 scale
+            skill_score = min(100, (skill_count / 10) * 100)
+            
+            # Combine: skills (50%) + sector fit (50%)
+            readiness = (skill_score * 0.5) + (sector_fit * 0.5)
+            return min(100, max(0, readiness))
+        except Exception as e:
+            logger.error(f"Error calculating skill readiness: {e}")
+            return 40.0
+        finally:
+            conn.close()
+    
+    def calculate_placement_fit(self, student_id):
+        """
+        Calculate placement fit (0-100)
+        Metrics: Personality fit from screening + sector interest alignment
+        """
+        conn = self.get_connection()
+        try:
+            # Get personality fit and role recommendations
+            df = pd.read_sql_query(
+                """SELECT 
+                   COALESCE(overall_soft_skill_score, 50) as personality_fit
+                   FROM mb_multimodal_screenings
+                   WHERE student_id = ?""",
+                conn,
+                params=(student_id,)
+            )
+            
+            if df.empty:
+                return 50.0  # Default neutral
+            
+            personality_fit = df.iloc[0]['personality_fit'] or 50
+            return min(100, max(0, personality_fit))
+        except Exception as e:
+            logger.error(f"Error calculating placement fit: {e}")
+            return 50.0
+        finally:
+            conn.close()
+    
+    def calculate_youth_potential_score(self, student_id):
+        """
+        Calculate Youth Potential Score™
+        Composite: (Engagement×0.25) + (Retention×0.25) + (Skill×0.25) + (Placement×0.25)
+        Returns: overall_score (0-100) + tier (Exceptional/High/Medium/Development)
+        """
+        engagement = self.calculate_engagement_probability(student_id)
+        retention = self.calculate_retention_likelihood(student_id)
+        skill = self.calculate_skill_readiness(student_id)
+        placement = self.calculate_placement_fit(student_id)
+        
+        overall_score = (engagement * 0.25) + (retention * 0.25) + (skill * 0.25) + (placement * 0.25)
+        
+        # Determine tier
+        if overall_score >= 80:
+            tier = "Exceptional"
+        elif overall_score >= 65:
+            tier = "High"
+        elif overall_score >= 50:
+            tier = "Medium"
+        else:
+            tier = "Development"
+        
+        return {
+            "student_id": student_id,
+            "overall_score": round(overall_score, 2),
+            "tier": tier,
+            "engagement_probability": round(engagement, 2),
+            "retention_likelihood": round(retention, 2),
+            "skill_readiness": round(skill, 2),
+            "placement_fit": round(placement, 2),
+            "computed_at": datetime.now().isoformat()
+        }
+    
+    def get_top_potential_students(self, limit=20):
+        """
+        Get top students ranked by Youth Potential Score™
+        Returns list of students with scores and tiers
+        """
+        conn = self.get_connection()
+        try:
+            # Get all student IDs
+            df_students = pd.read_sql_query(
+                "SELECT DISTINCT student_id FROM mb_users",
+                conn
+            )
+            
+            if df_students.empty:
+                return []
+            
+            # Calculate potential for each student
+            results = []
+            for _, row in df_students.iterrows():
+                student_id = row['student_id']
+                potential = self.calculate_youth_potential_score(student_id)
+                results.append(potential)
+            
+            # Sort by overall_score descending
+            results.sort(key=lambda x: x['overall_score'], reverse=True)
+            
+            return results[:limit]
+        except Exception as e:
+            logger.error(f"Error getting top potential students: {e}")
+            return []
+        finally:
+            conn.close()
+    
+    def get_potential_distribution(self):
+        """
+        Get distribution of students by potential tier
+        Returns: counts by tier (Exceptional, High, Medium, Development)
+        """
+        conn = self.get_connection()
+        try:
+            df_students = pd.read_sql_query(
+                "SELECT DISTINCT student_id FROM mb_users",
+                conn
+            )
+            
+            if df_students.empty:
+                return {}
+            
+            distribution = {
+                "Exceptional": 0,
+                "High": 0,
+                "Medium": 0,
+                "Development": 0
+            }
+            
+            for _, row in df_students.iterrows():
+                student_id = row['student_id']
+                potential = self.calculate_youth_potential_score(student_id)
+                tier = potential['tier']
+                distribution[tier] += 1
+            
+            return distribution
+        except Exception as e:
+            logger.error(f"Error getting potential distribution: {e}")
+            return {}
+        finally:
+            conn.close()
+    
+    # ========================
+    # INTELLIGENT ONBOARDING ORCHESTRATOR
+    # ========================
+    def get_onboarding_pathway(self, student_id):
+        """
+        Get personalized onboarding pathway based on Youth Potential Score™ tier
+        Routes students to tier-specific pathways with personalized timeline and support
+        """
+        potential = self.calculate_youth_potential_score(student_id)
+        tier = potential['tier']
+        
+        pathways = {
+            "Exceptional": {
+                "tier": "Exceptional",
+                "timeline_days": 14,
+                "mentorship_level": "light",
+                "support_frequency": "Weekly",
+                "recommended_modules": ["Advanced Leadership", "Sector Specialization", "Entrepreneurship"],
+                "key_milestones": [
+                    {"day": 1, "task": "Advanced onboarding & network building"},
+                    {"day": 7, "task": "Sector specialization deep-dive"},
+                    {"day": 14, "task": "Leadership project kickoff"}
+                ],
+                "description": "Fast-track pathway for high-potential youth. Focuses on advanced skills and leadership development."
+            },
+            "High": {
+                "tier": "High",
+                "timeline_days": 30,
+                "mentorship_level": "standard",
+                "support_frequency": "Bi-weekly",
+                "recommended_modules": ["Core Module 1", "Sector Fit Module", "Advanced Skills"],
+                "key_milestones": [
+                    {"day": 1, "task": "Standard onboarding & goal setting"},
+                    {"day": 10, "task": "Core module completion milestone"},
+                    {"day": 20, "task": "Mid-journey check-in & support"},
+                    {"day": 30, "task": "Pathway completion & next steps planning"}
+                ],
+                "description": "Standard pathway for motivated youth with solid engagement. Balanced learning and support."
+            },
+            "Medium": {
+                "tier": "Medium",
+                "timeline_days": 45,
+                "mentorship_level": "structured",
+                "support_frequency": "Weekly",
+                "recommended_modules": ["Foundation Module", "Core Basics", "Skill Building"],
+                "key_milestones": [
+                    {"day": 1, "task": "Personalized onboarding & motivation"},
+                    {"day": 15, "task": "Foundation module check-in"},
+                    {"day": 30, "task": "Mid-pathway support & encouragement"},
+                    {"day": 45, "task": "Progress review & pathway completion"}
+                ],
+                "description": "Supported pathway for youth needing structure. Includes weekly check-ins and mentorship."
+            },
+            "Development": {
+                "tier": "Development",
+                "timeline_days": 60,
+                "mentorship_level": "intensive",
+                "support_frequency": "Twice per week",
+                "recommended_modules": ["Basics Module", "Foundation Skills", "Engagement Building"],
+                "key_milestones": [
+                    {"day": 1, "task": "Intensive onboarding & trust building"},
+                    {"day": 15, "task": "First milestone celebration"},
+                    {"day": 30, "task": "Mid-journey intensive support"},
+                    {"day": 45, "task": "Progress acceleration phase"},
+                    {"day": 60, "task": "Pathway completion & tier transition"}
+                ],
+                "description": "Intensive pathway for youth requiring additional support. Focuses on building engagement and confidence."
+            }
+        }
+        
+        pathway = pathways[tier]
+        pathway["student_id"] = student_id
+        pathway["overall_potential_score"] = potential['overall_score']
+        pathway["computed_at"] = datetime.now().isoformat()
+        
+        return pathway
+    
+    def get_recommended_next_module(self, student_id):
+        """
+        Get next recommended module based on Youth Potential tier and progress
+        Returns module suitable for tier difficulty level
+        """
+        potential = self.calculate_youth_potential_score(student_id)
+        tier = potential['tier']
+        
+        conn = self.get_connection()
+        try:
+            # Get completed modules
+            df_completed = pd.read_sql_query(
+                """SELECT GROUP_CONCAT(module_id) as completed_modules
+                   FROM learning_modules
+                   WHERE user_id = (SELECT user_id FROM mb_users WHERE student_id = ?)
+                   AND status = 'completed'""",
+                conn,
+                params=(student_id,)
+            )
+            
+            completed_modules = df_completed.iloc[0]['completed_modules'] if not df_completed.empty else ""
+            
+            # Get available modules filtered by tier difficulty
+            tier_difficulty_map = {
+                "Exceptional": ("Advanced", 100),
+                "High": ("Intermediate", 75),
+                "Medium": ("Foundation", 50),
+                "Development": ("Basic", 25)
+            }
+            
+            difficulty, min_complexity = tier_difficulty_map[tier]
+            
+            # Query for next module
+            query = """SELECT 
+                       m.module_id, m.module_name, m.description, m.duration_hours, m.difficulty_level
+                       FROM mb_modules m
+                       WHERE m.difficulty_level <= ?
+                       AND m.module_id NOT IN (SELECT module_id FROM learning_modules WHERE user_id = (SELECT user_id FROM mb_users WHERE student_id = ?))
+                       ORDER BY m.difficulty_level DESC, m.created_at ASC
+                       LIMIT 1"""
+            
+            df_next = pd.read_sql_query(query, conn, params=(min_complexity, student_id))
+            
+            if df_next.empty:
+                return {
+                    "student_id": student_id,
+                    "tier": tier,
+                    "recommendation": "All available modules completed for this tier",
+                    "next_module": None,
+                    "message": "Congratulations! Consider advancing to next tier or specialization."
+                }
+            
+            next_module = df_next.iloc[0].to_dict()
+            return {
+                "student_id": student_id,
+                "tier": tier,
+                "next_module": next_module,
+                "recommendation_reason": f"Recommended module for {tier} tier students",
+                "estimated_duration_hours": next_module.get('duration_hours', 'TBD'),
+                "difficulty_level": next_module.get('difficulty_level', 'TBD')
+            }
+        except Exception as e:
+            logger.error(f"Error getting recommended next module: {e}")
+            return {
+                "student_id": student_id,
+                "tier": tier,
+                "error": str(e)
+            }
+        finally:
+            conn.close()
+
+
 def init_decision_dashboard():
     """Initialize decision dashboard on page load"""
     if 'decision_dashboard' not in st.session_state:
