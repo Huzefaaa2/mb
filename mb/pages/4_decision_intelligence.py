@@ -52,6 +52,9 @@ dashboard_tabs = st.tabs([
     "📚 Module Effectiveness",
     "🏅 Gamification Impact",
     "🎙️ Screening Analytics",
+    "⭐ Youth Potential Score™",
+    "📉 Retention Analytics",
+    "🎓 Skill Development",
     "💡 Proposal Generator"
 ])
 
@@ -613,9 +616,333 @@ with dashboard_tabs[6]:
         logger.error(f"Screening analytics error: {e}")
 
 # ========================
-# TAB 8: PROPOSAL GENERATOR
+# TAB 8: YOUTH POTENTIAL SCORE™
 # ========================
-with dashboard_tabs[7]:
+with dashboard_tabs[8]:
+    st.markdown("### ⭐ Youth Potential Score™ Dashboard")
+    st.markdown("*AI-Powered Composite Score for Personalized Development*")
+    
+    try:
+        # Get distribution
+        distribution = dashboard.get_potential_distribution()
+        top_students = dashboard.get_top_potential_students(limit=20)
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            exceptional = distribution.get("Exceptional", 0)
+            st.metric("🚀 Exceptional", exceptional, delta=f"{round(100*exceptional/max(sum(distribution.values()), 1), 1)}%")
+        
+        with col2:
+            high = distribution.get("High", 0)
+            st.metric("📈 High", high, delta=f"{round(100*high/max(sum(distribution.values()), 1), 1)}%")
+        
+        with col3:
+            medium = distribution.get("Medium", 0)
+            st.metric("📊 Medium", medium, delta=f"{round(100*medium/max(sum(distribution.values()), 1), 1)}%")
+        
+        with col4:
+            development = distribution.get("Development", 0)
+            st.metric("🌱 Development", development, delta=f"{round(100*development/max(sum(distribution.values()), 1), 1)}%")
+        
+        st.markdown("---")
+        
+        # Tier distribution pie chart
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            fig_dist = px.pie(
+                values=distribution.values(),
+                names=distribution.keys(),
+                title="Distribution by Tier",
+                color_discrete_map={
+                    "Exceptional": "#1f77b4",
+                    "High": "#2ca02c",
+                    "Medium": "#ff7f0e",
+                    "Development": "#d62728"
+                }
+            )
+            st.plotly_chart(fig_dist, use_container_width=True)
+        
+        with col2:
+            # Score statistics
+            if top_students:
+                scores = [s['overall_score'] for s in top_students]
+                fig_hist = px.histogram(
+                    x=scores,
+                    nbins=10,
+                    title="Potential Score Distribution",
+                    labels={"x": "Score", "y": "Count"}
+                )
+                fig_hist.add_vline(x=80, line_dash="dash", line_color="blue", annotation_text="Exceptional (80)")
+                fig_hist.add_vline(x=65, line_dash="dash", line_color="green", annotation_text="High (65)")
+                fig_hist.add_vline(x=50, line_dash="dash", line_color="orange", annotation_text="Medium (50)")
+                st.plotly_chart(fig_hist, use_container_width=True)
+        
+        st.markdown("---")
+        
+        # Top students leaderboard
+        st.subheader("🏆 Top 20 Students by Potential")
+        
+        if top_students:
+            leaderboard_data = []
+            for i, student in enumerate(top_students, 1):
+                leaderboard_data.append({
+                    "Rank": i,
+                    "Student ID": student['student_id'],
+                    "Overall Score": round(student['overall_score'], 2),
+                    "Tier": student['tier'],
+                    "Engagement": round(student['engagement_probability'], 1),
+                    "Retention": round(student['retention_likelihood'], 1),
+                    "Skills": round(student['skill_readiness'], 1),
+                    "Placement": round(student['placement_fit'], 1)
+                })
+            
+            df_leaderboard = pd.DataFrame(leaderboard_data)
+            
+            # Color-code by tier
+            def tier_color(tier):
+                if tier == "Exceptional": return "background-color: #d4edda"
+                elif tier == "High": return "background-color: #cce5ff"
+                elif tier == "Medium": return "background-color: #fff3cd"
+                else: return "background-color: #f8d7da"
+            
+            st.dataframe(
+                df_leaderboard.style.applymap(tier_color, subset=['Tier']),
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("No student data available yet.")
+    
+    except Exception as e:
+        st.error(f"Error loading Youth Potential Score: {e}")
+        logger.error(f"Youth Potential error: {e}")
+
+# ========================
+# TAB 9: RETENTION ANALYTICS
+# ========================
+with dashboard_tabs[9]:
+    st.markdown("### 📉 Retention Analytics & Churn Prevention")
+    st.markdown("*Monitor and manage student retention toward 85% goal*")
+    
+    try:
+        from mb.pages.gamification import predict_churn_risk, calculate_retention_impact
+        
+        # Retention metrics
+        impact = calculate_retention_impact()
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric(
+                "Current Retention",
+                f"{impact.get('current_retention_rate', 0):.1f}%",
+                delta=f"Goal: {impact.get('target_retention', 85)}%"
+            )
+        
+        with col2:
+            progress = impact.get('progress_toward_target_pct', 0)
+            st.metric(
+                "Progress to Target",
+                f"{progress:.1f}%",
+                delta="From 65% baseline"
+            )
+        
+        with col3:
+            at_risk = impact.get('at_risk_students', 0)
+            st.metric(
+                "At-Risk Students",
+                at_risk,
+                delta=f"Total: {impact.get('total_students', 0)}"
+            )
+        
+        st.markdown("---")
+        
+        # Retention progress meter
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            baseline = impact.get('baseline_retention', 65)
+            current = impact.get('current_retention_rate', 65)
+            target = impact.get('target_retention', 85)
+            
+            fig_meter = go.Figure(go.Indicator(
+                mode="gauge+number+delta",
+                value=current,
+                domain={'x': [0, 1], 'y': [0, 1]},
+                title={'text': "Retention Rate (%)"},
+                delta={'reference': baseline},
+                gauge={
+                    'axis': {'range': [0, 100]},
+                    'bar': {'color': "darkblue"},
+                    'steps': [
+                        {'range': [0, 65], 'color': "#d62728"},
+                        {'range': [65, 85], 'color': "#ff7f0e"},
+                        {'range': [85, 100], 'color': "#2ca02c"}
+                    ],
+                    'threshold': {
+                        'line': {'color': "red", 'width': 4},
+                        'thickness': 0.75,
+                        'value': target
+                    }
+                }
+            ))
+            st.plotly_chart(fig_meter, use_container_width=True)
+        
+        st.markdown("---")
+        
+        # Intervention effectiveness
+        st.subheader("🎯 Intervention Effectiveness")
+        
+        interv_metrics = impact.get('intervention_metrics', {})
+        gam_metrics = impact.get('gamification_metrics', {})
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric(
+                "Interventions (30d)",
+                interv_metrics.get('total_interventions_30d', 0),
+                delta=f"Success: {interv_metrics.get('success_rate_pct', 0):.0f}%"
+            )
+        
+        with col2:
+            st.metric(
+                "Badge Earners",
+                gam_metrics.get('badge_earners_30d', 0),
+                delta=f"Total: {gam_metrics.get('total_badges_earned_30d', 0)} badges"
+            )
+        
+        with col3:
+            avg_badges = gam_metrics.get('avg_badges_per_earner', 0)
+            st.metric(
+                "Avg Badges/Earner",
+                f"{avg_badges:.2f}",
+                delta="Engagement indicator"
+            )
+        
+        st.markdown("---")
+        
+        # Recommendations
+        st.subheader("💡 Recommendations")
+        
+        for rec in impact.get('recommendations', []):
+            st.write(f"• {rec}")
+    
+    except Exception as e:
+        st.error(f"Error loading retention analytics: {e}")
+        logger.error(f"Retention analytics error: {e}")
+
+# ========================
+# TAB 10: SKILL DEVELOPMENT
+# ========================
+with dashboard_tabs[10]:
+    st.markdown("### 🎓 Skill Development & Learning Paths")
+    st.markdown("*Track skill gaps and personalized learning recommendations*")
+    
+    try:
+        from mb.services.skill_gap_bridger import SkillGapBridger
+        
+        bridger = SkillGapBridger()
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            student_id = st.selectbox(
+                "Select Student",
+                ["STU001", "STU002", "STU003", "STU004", "STU005"],
+                key="skill_student"
+            )
+        
+        with col2:
+            role = st.selectbox(
+                "Target Role",
+                ["Software Developer", "Data Analyst", "Business Analyst", "Project Manager", "UX Designer"],
+                key="skill_role"
+            )
+        
+        if st.button("🔍 Analyze Skill Gaps", use_container_width=True):
+            with st.spinner("Analyzing skills and generating learning path..."):
+                gaps = bridger.analyze_skill_gaps(student_id, role)
+                
+                if "error" not in gaps:
+                    # Gap summary
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.metric("Current Skills", gaps.get('current_skills_count', 0))
+                    
+                    with col2:
+                        st.metric("Required Skills", gaps.get('required_skills_count', 0))
+                    
+                    with col3:
+                        st.metric("Skill Gaps", gaps.get('total_gaps', 0))
+                    
+                    st.markdown("---")
+                    
+                    # Generate learning path
+                    path = bridger.generate_learning_path(gaps)
+                    
+                    st.subheader("📚 Personalized Learning Path")
+                    
+                    if path.get('learning_path'):
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.metric("Total Hours", f"{path.get('total_estimated_hours', 0)}")
+                            st.metric("Estimated Days", f"{path.get('total_estimated_days', 0):.0f}")
+                        
+                        with col2:
+                            st.info(path.get('recommendation', 'Complete learning path to develop skills'))
+                        
+                        st.markdown("---")
+                        
+                        # Detailed learning path
+                        for i, item in enumerate(path['learning_path'], 1):
+                            with st.expander(f"📖 {item['skill']} - {item['priority']} Priority"):
+                                for resource in item['resources']:
+                                    st.write(f"**{resource['resource']}**")
+                                    st.write(f"Platform: {resource['platform']} | Duration: {resource['duration_hours']}h")
+                                    st.write(f"[📎 View Resource]({resource.get('url', '#')})")
+                                    st.divider()
+                    else:
+                        st.info("✅ All skills aligned with role requirements!")
+                else:
+                    st.error(f"Error: {gaps['error']}")
+        
+        st.markdown("---")
+        
+        # Supported roles info
+        st.subheader("📋 Supported Roles & Skills")
+        
+        roles_info = {
+            "Software Developer": ["Python", "SQL", "Problem Solving", "Version Control", "APIs", "Testing"],
+            "Data Analyst": ["SQL", "Excel", "Data Visualization", "Statistics", "Python", "Tableau"],
+            "Business Analyst": ["Communication", "Business Acumen", "Documentation", "Excel", "SQL", "Stakeholder Management"],
+            "Project Manager": ["Leadership", "Communication", "Planning", "Risk Management", "Budgeting", "Team Management"],
+            "UX Designer": ["Design Thinking", "Figma", "User Research", "Wireframing", "Communication", "Prototyping"]
+        }
+        
+        selected_role = st.selectbox("View role requirements:", list(roles_info.keys()), key="view_role")
+        
+        col1, col2, col3 = st.columns(3)
+        for i, skill in enumerate(roles_info[selected_role]):
+            if i % 3 == 0:
+                st.write(f"✓ {skill}")
+            elif i % 3 == 1:
+                st.write(f"✓ {skill}")
+            else:
+                st.write(f"✓ {skill}")
+    
+    except Exception as e:
+        st.error(f"Error loading skill development: {e}")
+        logger.error(f"Skill development error: {e}")
+
+# ========================
+# TAB 11: PROPOSAL GENERATOR
+# ========================
+with dashboard_tabs[11]:
     st.markdown("### 💡 AI-Powered Funding Proposal Generator")
     st.markdown("*Generate evidence-backed proposals for donors and CSR partners*")
     
