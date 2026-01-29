@@ -156,3 +156,38 @@ CREATE TABLE IF NOT EXISTS mb_batch_formations (
 );
 
 CREATE INDEX IF NOT EXISTS idx_batch_sector ON mb_batch_formations(sector_id);
+
+-- Multi-Modal Screening Results (Voice/Video interviews for soft skills assessment)
+CREATE TABLE IF NOT EXISTS mb_multimodal_screenings (
+    screening_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id VARCHAR(50) NOT NULL,
+    submission_type VARCHAR(20) NOT NULL,
+    media_path VARCHAR(500),
+    transcription TEXT,
+    communication_confidence REAL,
+    cultural_fit_score REAL,
+    problem_solving_score REAL,
+    emotional_intelligence REAL,
+    leadership_potential REAL,
+    overall_soft_skill_score REAL,
+    extraction_confidence REAL,
+    top_role_match VARCHAR(100),
+    role_match_confidence REAL,
+    role_recommendations TEXT,
+    personality_fit_level VARCHAR(20),
+    marginalized_score REAL,
+    neet_score REAL,
+    screening_status VARCHAR(20) DEFAULT 'completed',
+    reviewer_notes TEXT,
+    manual_override_score REAL,
+    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    extracted_at TIMESTAMP,
+    scored_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_screening_student ON mb_multimodal_screenings(student_id);
+CREATE INDEX IF NOT EXISTS idx_screening_submitted ON mb_multimodal_screenings(submitted_at);
+CREATE INDEX IF NOT EXISTS idx_screening_status ON mb_multimodal_screenings(screening_status);
+CREATE INDEX IF NOT EXISTS idx_screening_personality_fit ON mb_multimodal_screenings(personality_fit_level);

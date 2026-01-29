@@ -37,6 +37,9 @@ from email_service import (
     verify_email_configuration
 )
 
+# Import multimodal screening service
+from mb import MultiModalScreeningService
+
 st.set_page_config(page_title="Magic Bus Staff Dashboard", page_icon="📈", layout="wide")
 
 # Remove password authentication - this is a passwordless staff dashboard
@@ -56,6 +59,7 @@ main_tabs = st.tabs([
     "🎯 Career Pathways",
     "📚 Learning Progress",
     "🤖 AI Recommendations",
+    "🎙️ Multi-Modal Screening",
     "📋 Reports",
     "💬 Feedback Analytics",
     "📧 Survey Distribution"
@@ -539,9 +543,193 @@ Format as a structured list with brief descriptions."""
         logger.error(f"AI recommendations error: {e}")
 
 # ========================
-# TAB 6: REPORTS
+# TAB 6: MULTI-MODAL SCREENING
 # ========================
 with main_tabs[5]:
+    st.markdown("### 🎙️ Multi-Modal Screening Management")
+    st.markdown("Manage voice/video-based soft skills assessments for personality-driven role matching")
+    
+    try:
+        screener = MultiModalScreeningService(str(DB_PATH))
+        
+        screening_subtab1, screening_subtab2, screening_subtab3 = st.tabs([
+            "📊 Screening Analytics",
+            "✅ Review & Approve",
+            "👥 Personality-Driven Matches"
+        ])
+        
+        with screening_subtab1:
+            st.markdown("### Screening Metrics & Analytics")
+            
+            # Get screening statistics
+            conn = sqlite3.connect(str(DB_PATH))
+            cursor = conn.cursor()
+            
+            try:
+                cursor.execute("SELECT COUNT(*) FROM mb_multimodal_screenings")
+                total_screenings = cursor.fetchone()[0] or 0
+                
+                cursor.execute("SELECT COUNT(*) FROM mb_multimodal_screenings WHERE personality_fit_level = 'High'")
+                high_fit = cursor.fetchone()[0] or 0
+                
+                cursor.execute("SELECT AVG(overall_soft_skill_score) FROM mb_multimodal_screenings")
+                avg_score = cursor.fetchone()[0] or 0
+                
+                cursor.execute("SELECT COUNT(DISTINCT student_id) FROM mb_multimodal_screenings")
+                unique_candidates = cursor.fetchone()[0] or 0
+                
+            except:
+                total_screenings = high_fit = avg_score = unique_candidates = 0
+            finally:
+                conn.close()
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("📊 Total Screenings", total_screenings)
+            with col2:
+                st.metric("✨ High Personality Fit", high_fit)
+            with col3:
+                st.metric("⭐ Avg Soft Skills Score", f"{avg_score:.1f}")
+            with col4:
+                st.metric("👥 Unique Candidates", unique_candidates)
+            
+            st.markdown("---")
+            st.markdown("### Recent Screenings")
+            
+            try:
+                conn = sqlite3.connect(str(DB_PATH))
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    SELECT student_id, submission_type, overall_soft_skill_score, 
+                           personality_fit_level, role_recommendations, submitted_at
+                    FROM mb_multimodal_screenings
+                    ORDER BY submitted_at DESC LIMIT 10
+                """)
+                
+                screenings = cursor.fetchall()
+                conn.close()
+                
+                if screenings:
+                    df_screenings = pd.DataFrame(screenings, columns=[
+                        "Student ID", "Type", "Score", "Fit Level", "Roles", "Submitted"
+                    ])
+                    st.dataframe(df_screenings, use_container_width=True, hide_index=True)
+                else:
+                    st.info("No screenings recorded yet")
+                    
+            except Exception as e:
+                st.error(f"Error loading screenings: {e}")
+        
+        with screening_subtab2:
+            st.markdown("### Review & Approve Screenings")
+            
+            student_id_review = st.number_input(
+                "Enter Student ID to Review",
+                min_value=1,
+                step=1,
+                key="screening_review_id"
+            )
+            
+            if st.button("🔍 Load Screening", key="load_screening_btn"):
+                screenings = screener.get_candidate_screenings(student_id_review)
+                
+                if screenings:
+                    latest = screenings[0]
+                    
+                    st.markdown("#### Screening Details")
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Communication", f"{latest.get('communication_confidence', 0):.0f}/100")
+                    with col2:
+                        st.metric("Cultural Fit", f"{latest.get('cultural_fit_score', 0):.0f}/100")
+                    with col3:
+                        st.metric("Problem Solving", f"{latest.get('problem_solving_score', 0):.0f}/100")
+                    with col4:
+                        st.metric("Emotional Intelligence", f"{latest.get('emotional_intelligence', 0):.0f}/100")
+                    
+                    st.markdown("#### Overall Assessment")
+                    st.write(f"**Personality Fit Level:** {latest.get('personality_fit_level', 'N/A')}")
+                    st.write(f"**Overall Score:** {latest.get('overall_soft_skill_score', 0):.1f}/100")
+                    st.write(f"**Marginalized Score:** {latest.get('marginalized_score', 0):.1f}")
+                    
+                    roles_json = latest.get('role_recommendations', '[]')
+                    try:
+                        roles = json.loads(roles_json) if isinstance(roles_json, str) else roles_json
+                        st.write(f"**Recommended Roles:** {', '.join(roles) if roles else 'N/A'}")
+                    except:
+                        st.write("**Recommended Roles:** Unable to parse")
+                    
+                    # Transcription
+                    if latest.get('transcription'):
+                        with st.expander("📝 View Transcription"):
+                            st.write(latest['transcription'])
+                    
+                    # Admin approval section
+                    st.markdown("---")
+                    with st.form(f"approval_form_{student_id_review}"):
+                        approval_status = st.selectbox(
+                            "Approval Status",
+                            ["approved", "review_needed", "rejected"],
+                            key=f"approval_status_{student_id_review}"
+                        )
+                        
+                        reviewer_notes = st.text_area(
+                            "Reviewer Notes",
+                            key=f"reviewer_notes_{student_id_review}",
+                            height=100
+                        )
+                        
+                        submit_btn = st.form_submit_button("✅ Submit Review")
+                        
+                        if submit_btn:
+                            st.success(f"✅ Review submitted for student {student_id_review}")
+                            st.markdown(f"**Status:** {approval_status}")
+                            st.markdown(f"**Notes:** {reviewer_notes if reviewer_notes else 'None'}")
+                else:
+                    st.info(f"No screenings found for student {student_id_review}")
+        
+        with screening_subtab3:
+            st.markdown("### Personality-Driven Role Candidates")
+            st.markdown("Students matched for roles prioritizing personality over technical skills")
+            
+            min_score = st.slider("Minimum Personality Score", 0, 100, 70, key="min_personality_score")
+            
+            if st.button("🔍 Find Matching Candidates", key="find_candidates_btn"):
+                candidates = screener.get_personality_driven_candidates(min_score)
+                
+                if candidates:
+                    df_candidates = pd.DataFrame(candidates)
+                    
+                    # Format the dataframe
+                    if 'role_recommendations' in df_candidates.columns:
+                        df_candidates['role_recommendations'] = df_candidates['role_recommendations'].apply(
+                            lambda x: ', '.join(json.loads(x)) if isinstance(x, str) else str(x)
+                        )
+                    
+                    st.dataframe(df_candidates, use_container_width=True, hide_index=True)
+                    
+                    # Export option
+                    csv = df_candidates.to_csv(index=False)
+                    st.download_button(
+                        "📥 Download Candidates CSV",
+                        csv,
+                        "personality_matched_candidates.csv",
+                        "text/csv",
+                        key="download_candidates"
+                    )
+                else:
+                    st.info(f"No candidates found with personality score ≥ {min_score}")
+    
+    except Exception as e:
+        st.error(f"Error in screening management: {e}")
+        logger.error(f"Screening error: {e}")
+
+# ========================
+# TAB 7: REPORTS
+# ========================
+with main_tabs[6]:
     st.markdown("### 📋 Generate Reports")
     
     report_type = st.selectbox(
@@ -722,9 +910,9 @@ For questions or feedback, contact: support@magicbus.org
             logger.error(f"Report generation error: {e}")
 
 # ========================
-# TAB 7: FEEDBACK ANALYTICS
+# TAB 8: FEEDBACK ANALYTICS
 # ========================
-with main_tabs[6]:
+with main_tabs[7]:
     st.markdown("### 💬 Feedback Analytics & Insights")
     
     col1, col2 = st.columns(2)
@@ -905,9 +1093,9 @@ with main_tabs[6]:
 
 
 # ========================
-# TAB 8: SURVEY DISTRIBUTION
+# TAB 9: SURVEY DISTRIBUTION
 # ========================
-with main_tabs[7]:
+with main_tabs[8]:
     st.markdown("### 📧 Survey Distribution & Management")
     
     st.markdown("#### Email Configuration Status")
