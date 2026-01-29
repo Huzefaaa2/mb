@@ -38,7 +38,10 @@ from email_service import (
 )
 
 # Import multimodal screening service
-from mb import MultiModalScreeningService
+import sys
+from pathlib import Path as PathlibPath
+sys.path.insert(0, str(PathlibPath(__file__).parent.parent))
+from integrations.multimodal_screening import MultiModalScreeningService
 
 st.set_page_config(page_title="Magic Bus Staff Dashboard", page_icon="📈", layout="wide")
 

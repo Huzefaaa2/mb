@@ -244,7 +244,10 @@ else:
     st.markdown("### ⭐ Your Youth Potential Score™")
     
     try:
-        from mb.decision_dashboard import DecisionDashboard
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from decision_dashboard import DecisionDashboard
         
         dashboard = DecisionDashboard()
         
