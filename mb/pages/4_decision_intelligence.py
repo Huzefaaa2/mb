@@ -51,6 +51,7 @@ dashboard_tabs = st.tabs([
     "🚨 At-Risk Youth",
     "📚 Module Effectiveness",
     "🏅 Gamification Impact",
+    "🎙️ Screening Analytics",
     "💡 Proposal Generator"
 ])
 
@@ -424,7 +425,197 @@ with dashboard_tabs[5]:
 # ========================
 # TAB 7: PROPOSAL INSIGHTS GENERATOR
 # ========================
+# TAB 7: SCREENING ANALYTICS
+# ========================
 with dashboard_tabs[6]:
+    st.markdown("### 🎙️ Multi-Modal Screening Analytics")
+    st.markdown("*Voice-based soft skills assessment and role-personality matching metrics*")
+    
+    try:
+        # Get screening data
+        screening_analytics = dashboard.get_screening_analytics()
+        screening_funnel = dashboard.get_screening_funnel()
+        
+        if screening_analytics['total_screenings'] > 0:
+            # KPIs
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("📊 Total Screenings", screening_analytics['total_screenings'])
+            
+            with col2:
+                st.metric("👥 Unique Students", screening_analytics['unique_students'])
+            
+            with col3:
+                high_fit = screening_analytics['fit_distribution'].get('High', 0)
+                st.metric("✨ High Personality Fit", high_fit)
+            
+            with col4:
+                marginalized = screening_analytics['marginalized_count']
+                st.metric("🎯 Marginalized Youth", marginalized)
+            
+            st.markdown("---")
+            
+            # Soft skills distribution
+            st.markdown("### Soft Skills Distribution")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                avg_scores = screening_analytics['avg_scores']
+                
+                skills_names = [
+                    'Communication',
+                    'Cultural Fit',
+                    'Problem Solving',
+                    'Emotional Intelligence',
+                    'Leadership'
+                ]
+                skills_scores = [
+                    avg_scores.get('communication', 0),
+                    avg_scores.get('cultural_fit', 0),
+                    avg_scores.get('problem_solving', 0),
+                    avg_scores.get('emotional_intelligence', 0),
+                    avg_scores.get('leadership', 0)
+                ]
+                
+                fig_skills = go.Figure(data=[
+                    go.Bar(x=skills_names, y=skills_scores, marker_color='lightblue')
+                ])
+                fig_skills.update_layout(
+                    title="Average Soft Skills Scores",
+                    xaxis_title="Skill",
+                    yaxis_title="Average Score",
+                    height=350
+                )
+                st.plotly_chart(fig_skills, use_container_width=True)
+            
+            with col2:
+                # Personality fit distribution
+                fit_data = screening_analytics['fit_distribution']
+                
+                fig_fit = go.Figure(data=[
+                    go.Pie(
+                        labels=list(fit_data.keys()),
+                        values=list(fit_data.values()),
+                        marker=dict(colors=['green', 'orange', 'red'])
+                    )
+                ])
+                fig_fit.update_layout(
+                    title="Personality Fit Distribution",
+                    height=350
+                )
+                st.plotly_chart(fig_fit, use_container_width=True)
+            
+            st.markdown("---")
+            
+            # Screening funnel
+            st.markdown("### Screening Submission Funnel")
+            
+            funnel_data = screening_funnel
+            funnel_stages = ['Submitted', 'High Fit', 'Medium Fit']
+            funnel_values = [
+                funnel_data['submitted'],
+                funnel_data['high_fit'],
+                funnel_data['medium_fit']
+            ]
+            
+            fig_funnel = go.Figure(go.Funnel(
+                y=funnel_stages,
+                x=funnel_values,
+                marker=dict(color=['blue', 'green', 'orange'])
+            ))
+            fig_funnel.update_layout(
+                title="Screening Submission & Personality Fit Funnel",
+                height=350
+            )
+            st.plotly_chart(fig_funnel, use_container_width=True)
+            
+            # Conversion insights
+            st.markdown("### Conversion Metrics")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric(
+                    "High Fit Rate",
+                    f"{funnel_data['high_fit_rate']}%",
+                    delta="Of screenings submitted"
+                )
+            
+            with col2:
+                st.metric(
+                    "Matchable Rate",
+                    f"{funnel_data['matchable_rate']}%",
+                    delta="High + Medium fit"
+                )
+            
+            with col3:
+                if funnel_data['submitted'] > 0:
+                    low_fit_pct = round(100.0 * funnel_data['low_fit'] / funnel_data['submitted'], 1)
+                    st.metric("Low Fit Rate", f"{low_fit_pct}%")
+            
+            st.markdown("---")
+            
+            # Top recommended roles
+            st.markdown("### Top Personality-Driven Roles")
+            
+            top_roles = screening_analytics['top_roles']
+            
+            if top_roles:
+                role_names = [role[0] for role in top_roles]
+                role_counts = [role[1] for role in top_roles]
+                
+                fig_roles = go.Figure(data=[
+                    go.Bar(y=role_names, x=role_counts, orientation='h', marker_color='teal')
+                ])
+                fig_roles.update_layout(
+                    title="Top 5 Personality-Matched Roles",
+                    xaxis_title="Number of Matches",
+                    yaxis_title="Role",
+                    height=300
+                )
+                st.plotly_chart(fig_roles, use_container_width=True)
+            else:
+                st.info("No role recommendations yet")
+            
+            # Marginalized youth insights
+            st.markdown("---")
+            st.markdown("### Marginalized Youth Screening Impact")
+            
+            total_screened = screening_analytics['unique_students']
+            marginalized_screened = screening_analytics['marginalized_count']
+            
+            if total_screened > 0:
+                marginalized_pct = round(100.0 * marginalized_screened / total_screened, 1)
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.metric(
+                        "Marginalized Youth Screened",
+                        marginalized_screened,
+                        delta=f"{marginalized_pct}% of total"
+                    )
+                
+                with col2:
+                    avg_marginalized_boost = screening_analytics['avg_scores'].get('marginalized', 0)
+                    st.metric(
+                        "Avg Marginalized Score",
+                        f"{avg_marginalized_boost:.1f}",
+                        delta="1.15x boost applied"
+                    )
+        else:
+            st.info("📊 No screening data available yet. Voice screenings will appear here once students submit assessments.")
+    
+    except Exception as e:
+        st.error(f"Error loading screening analytics: {e}")
+        logger.error(f"Screening analytics error: {e}")
+
+# ========================
+# TAB 8: PROPOSAL GENERATOR
+# ========================
+with dashboard_tabs[7]:
     st.markdown("### 💡 AI-Powered Funding Proposal Generator")
     st.markdown("*Generate evidence-backed proposals for donors and CSR partners*")
     

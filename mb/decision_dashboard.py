@@ -314,6 +314,196 @@ class DecisionDashboard:
         except Exception as e:
             logger.error(f"Error generating proposal: {e}")
             return "Unable to generate proposal at this time. Please try again."
+    
+    # ========================
+    # MULTI-MODAL SCREENING ANALYTICS
+    # ========================
+    def get_screening_analytics(self):
+        """Get multi-modal screening KPIs and funnel"""
+        conn = self.get_connection()
+        
+        try:
+            # Total screenings
+            df_screenings = pd.read_sql_query(
+                "SELECT COUNT(*) as total_screenings FROM mb_multimodal_screenings",
+                conn
+            )
+            total_screenings = df_screenings['total_screenings'].iloc[0] or 0
+            
+            # Personality fit distribution
+            df_fit = pd.read_sql_query(
+                """SELECT personality_fit_level, COUNT(*) as count 
+                   FROM mb_multimodal_screenings 
+                   GROUP BY personality_fit_level""",
+                conn
+            )
+            
+            fit_distribution = dict(zip(df_fit['personality_fit_level'], df_fit['count']))
+            
+            # Average scores
+            df_scores = pd.read_sql_query(
+                """SELECT 
+                   AVG(overall_soft_skill_score) as avg_soft_skill,
+                   AVG(communication_confidence) as avg_communication,
+                   AVG(cultural_fit_score) as avg_cultural_fit,
+                   AVG(problem_solving_score) as avg_problem_solving,
+                   AVG(emotional_intelligence) as avg_emotional_intelligence,
+                   AVG(leadership_potential) as avg_leadership,
+                   AVG(marginalized_score) as avg_marginalized_score
+                   FROM mb_multimodal_screenings""",
+                conn
+            )
+            
+            avg_scores = {
+                'overall': df_scores['avg_soft_skill'].iloc[0] or 0,
+                'communication': df_scores['avg_communication'].iloc[0] or 0,
+                'cultural_fit': df_scores['avg_cultural_fit'].iloc[0] or 0,
+                'problem_solving': df_scores['avg_problem_solving'].iloc[0] or 0,
+                'emotional_intelligence': df_scores['avg_emotional_intelligence'].iloc[0] or 0,
+                'leadership': df_scores['avg_leadership'].iloc[0] or 0,
+                'marginalized': df_scores['avg_marginalized_score'].iloc[0] or 0
+            }
+            
+            # Unique candidates screened
+            df_unique = pd.read_sql_query(
+                "SELECT COUNT(DISTINCT student_id) as unique_students FROM mb_multimodal_screenings",
+                conn
+            )
+            unique_students = df_unique['unique_students'].iloc[0] or 0
+            
+            # Role recommendations
+            df_roles = pd.read_sql_query(
+                """SELECT role_recommendations FROM mb_multimodal_screenings 
+                   WHERE role_recommendations IS NOT NULL""",
+                conn
+            )
+            
+            role_counts = {}
+            for roles_json in df_roles['role_recommendations']:
+                try:
+                    roles = json.loads(roles_json) if isinstance(roles_json, str) else roles_json
+                    for role in roles:
+                        role_counts[role] = role_counts.get(role, 0) + 1
+                except:
+                    pass
+            
+            # Top roles
+            top_roles = sorted(role_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+            
+            # Marginalized youth screened
+            df_marginalized = pd.read_sql_query(
+                "SELECT COUNT(DISTINCT student_id) as marginalized_count FROM mb_multimodal_screenings WHERE marginalized_score > 0",
+                conn
+            )
+            marginalized_count = df_marginalized['marginalized_count'].iloc[0] or 0
+            
+            return {
+                'total_screenings': total_screenings,
+                'unique_students': unique_students,
+                'fit_distribution': fit_distribution,
+                'avg_scores': avg_scores,
+                'top_roles': top_roles,
+                'marginalized_count': marginalized_count
+            }
+        except Exception as e:
+            logger.error(f"Error getting screening analytics: {e}")
+            return {
+                'total_screenings': 0,
+                'unique_students': 0,
+                'fit_distribution': {},
+                'avg_scores': {},
+                'top_roles': [],
+                'marginalized_count': 0
+            }
+        finally:
+            conn.close()
+    
+    def get_screening_funnel(self):
+        """Get screening submission → completion → placement conversion funnel"""
+        conn = self.get_connection()
+        
+        try:
+            # Screenings submitted (in database)
+            df_submitted = pd.read_sql_query(
+                "SELECT COUNT(*) as submitted FROM mb_multimodal_screenings",
+                conn
+            )
+            submitted = df_submitted['submitted'].iloc[0] or 0
+            
+            # High personality fit (likely to match roles)
+            df_high_fit = pd.read_sql_query(
+                "SELECT COUNT(*) as high_fit FROM mb_multimodal_screenings WHERE personality_fit_level = 'High'",
+                conn
+            )
+            high_fit = df_high_fit['high_fit'].iloc[0] or 0
+            
+            # Medium fit (potential matches)
+            df_medium_fit = pd.read_sql_query(
+                "SELECT COUNT(*) as medium_fit FROM mb_multimodal_screenings WHERE personality_fit_level = 'Medium'",
+                conn
+            )
+            medium_fit = df_medium_fit['medium_fit'].iloc[0] or 0
+            
+            # Calculate conversion rates
+            high_fit_rate = round(100.0 * high_fit / submitted, 1) if submitted > 0 else 0
+            total_matchable = high_fit + medium_fit
+            matchable_rate = round(100.0 * total_matchable / submitted, 1) if submitted > 0 else 0
+            
+            return {
+                'submitted': submitted,
+                'high_fit': high_fit,
+                'medium_fit': medium_fit,
+                'low_fit': submitted - high_fit - medium_fit,
+                'high_fit_rate': high_fit_rate,
+                'matchable_rate': matchable_rate
+            }
+        except Exception as e:
+            logger.error(f"Error getting screening funnel: {e}")
+            return {
+                'submitted': 0,
+                'high_fit': 0,
+                'medium_fit': 0,
+                'low_fit': 0,
+                'high_fit_rate': 0,
+                'matchable_rate': 0
+            }
+        finally:
+            conn.close()
+    
+    def get_screening_candidates_by_role(self, role=None):
+        """Get candidates recommended for specific role"""
+        conn = self.get_connection()
+        
+        try:
+            if role:
+                # Get candidates matching specific role
+                df = pd.read_sql_query(
+                    """SELECT student_id, overall_soft_skill_score, personality_fit_level,
+                              marginalized_score, communication_confidence, cultural_fit_score,
+                              emotional_intelligence, leadership_potential
+                       FROM mb_multimodal_screenings
+                       WHERE role_recommendations LIKE ?
+                       ORDER BY overall_soft_skill_score DESC""",
+                    conn,
+                    params=(f'%{role}%',)
+                )
+            else:
+                # Get top candidates across all roles
+                df = pd.read_sql_query(
+                    """SELECT student_id, overall_soft_skill_score, personality_fit_level,
+                              role_recommendations, marginalized_score
+                       FROM mb_multimodal_screenings
+                       ORDER BY overall_soft_skill_score DESC
+                       LIMIT 20""",
+                    conn
+                )
+            
+            return df.to_dict('records') if not df.empty else []
+        except Exception as e:
+            logger.error(f"Error getting screening candidates: {e}")
+            return []
+        finally:
+            conn.close()
 
 
 def init_decision_dashboard():

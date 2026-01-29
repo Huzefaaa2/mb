@@ -92,10 +92,171 @@ class SoftSkillsExtractor:
                 scores.get("cultural_fit", 0) * 0.3, 1
             )
             
+            # Optionally enhance with GPT analysis
+            gpt_scores = self.analyze_with_gpt(transcript)
+            if gpt_scores:
+                # Blend GPT scores (50% weight) with keyword scores (50% weight)
+                for skill in scores:
+                    if skill in gpt_scores and skill != "overall_communication":
+                        scores[skill] = round(scores[skill] * 0.5 + gpt_scores[skill] * 0.5, 1)
+                
+                # Recalculate overall with blended scores
+                scores["overall_communication"] = round(
+                    scores.get("communication_confidence", 0) * 0.4 +
+                    scores.get("emotional_intelligence", 0) * 0.3 +
+                    scores.get("cultural_fit", 0) * 0.3, 1
+                )
+            
             return scores
         except Exception as e:
             logger.error(f"Error analyzing transcript: {e}")
             return {skill: 0 for skill in self.SOFT_SKILLS_KEYWORDS.keys()}
+    
+    def analyze_with_gpt(self, transcript: str) -> Optional[Dict[str, float]]:
+        """Enhance analysis with GPT-based NLP (optional)"""
+        try:
+            api_key = os.getenv("AZURE_OPENAI_KEY")
+            if not api_key or api_key.startswith("<"):
+                return None
+            
+            from openai import AzureOpenAI
+            
+            client = AzureOpenAI(
+                api_key=api_key,
+                api_version="2024-02-15-preview",
+                azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", "")
+            )
+            
+            prompt = f"""Analyze this transcript for soft skills and rate on a scale of 0-100:
+
+Transcript: {transcript[:500]}
+
+Rate the following (0-100 each):
+1. communication_confidence: How clear, articulate, and engaging is the speaker?
+2. cultural_fit: How collaborative and inclusive is the speaker?
+3. problem_solving: How analytical and solution-oriented is the speaker?
+4. emotional_intelligence: How empathetic and understanding is the speaker?
+5. leadership_potential: How much initiative and motivation is shown?
+
+Return ONLY a JSON object like:
+{{"communication_confidence": 45, "cultural_fit": 50, "problem_solving": 40, "emotional_intelligence": 55, "leadership_potential": 50}}"""
+            
+            response = client.chat.completions.create(
+                model=os.getenv("AZURE_OPENAI_MODEL", "gpt-4"),
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=200
+            )
+            
+            # Parse JSON response
+            response_text = response.choices[0].message.content
+            import json
+            scores = json.loads(response_text)
+            
+            # Normalize to 0-100 range
+            return {k: min(100, max(0, v)) for k, v in scores.items()}
+        except ImportError:
+            logger.warning("Azure OpenAI SDK not installed")
+            return None
+        except Exception as e:
+            logger.warning(f"GPT analysis failed (using keyword only): {e}")
+            return None
+
+
+class AzureSpeechToTextService:
+    """Integrates Azure Speech-to-Text for voice transcription"""
+    
+    def __init__(self):
+        self.api_key = os.getenv("AZURE_SPEECH_KEY")
+        self.region = os.getenv("AZURE_SPEECH_REGION", "southeastasia")
+        self.speech_config = None
+        
+        if self.api_key and not self.api_key.startswith("<"):
+            try:
+                import azure.cognitiveservices.speech as speechsdk
+                self.speech_config = speechsdk.SpeechConfig(
+                    subscription=self.api_key,
+                    region=self.region
+                )
+                logger.info("Azure Speech-to-Text service initialized")
+            except ImportError:
+                logger.warning("Azure Speech SDK not installed. Install: pip install azure-cognitiveservices-speech")
+            except Exception as e:
+                logger.warning(f"Azure Speech-to-Text initialization failed: {e}")
+    
+    def transcribe_audio_file(self, audio_file_path: str) -> Optional[str]:
+        """Transcribe audio file using Azure Speech-to-Text"""
+        try:
+            if not self.speech_config:
+                logger.warning("Azure Speech-to-Text not configured, skipping transcription")
+                return None
+            
+            import azure.cognitiveservices.speech as speechsdk
+            
+            # Validate file exists
+            if not Path(audio_file_path).exists():
+                logger.error(f"Audio file not found: {audio_file_path}")
+                return None
+            
+            # Create recognizer with audio file
+            audio_config = speechsdk.AudioConfig(filename=audio_file_path)
+            recognizer = speechsdk.SpeechRecognizer(
+                speech_config=self.speech_config,
+                audio_config=audio_config
+            )
+            
+            logger.info(f"Transcribing audio file: {audio_file_path}")
+            result = recognizer.recognize_once()
+            
+            if result.reason == speechsdk.ResultReason.RecognizedFromFile:
+                transcript = result.text
+                logger.info(f"Transcription successful: {len(transcript)} characters")
+                return transcript
+            elif result.reason == speechsdk.ResultReason.NoMatch:
+                logger.warning("No speech detected in audio file")
+                return None
+            elif result.reason == speechsdk.ResultReason.Canceled:
+                error = result.cancellation_details
+                logger.error(f"Speech recognition canceled: {error.reason} - {error.error_details}")
+                return None
+        except ImportError:
+            logger.warning("Azure Speech SDK not available")
+            return None
+        except Exception as e:
+            logger.error(f"Transcription failed: {e}")
+            return None
+    
+    def transcribe_from_microphone(self, duration_seconds: int = 30) -> Optional[str]:
+        """Transcribe speech from microphone (real-time)"""
+        try:
+            if not self.speech_config:
+                logger.warning("Azure Speech-to-Text not configured")
+                return None
+            
+            import azure.cognitiveservices.speech as speechsdk
+            
+            audio_config = speechsdk.AudioConfig(use_default_microphone=True)
+            recognizer = speechsdk.SpeechRecognizer(
+                speech_config=self.speech_config,
+                audio_config=audio_config
+            )
+            
+            logger.info(f"Listening for speech ({duration_seconds}s timeout)...")
+            result = recognizer.recognize_once()
+            
+            if result.reason == speechsdk.ResultReason.RecognizedFromMic:
+                transcript = result.text
+                logger.info(f"Microphone transcription: {len(transcript)} characters")
+                return transcript
+            else:
+                logger.warning(f"Microphone recognition failed: {result.reason}")
+                return None
+        except ImportError:
+            logger.warning("Azure Speech SDK not available")
+            return None
+        except Exception as e:
+            logger.error(f"Microphone transcription failed: {e}")
+            return None
 
 
 
@@ -105,6 +266,7 @@ class MultiModalScreeningService:
     def __init__(self, db_path: str = None):
         self.db_path = db_path or str(DB_PATH)
         self.skills_extractor = SoftSkillsExtractor()
+        self.speech_service = AzureSpeechToTextService()
         self._init_db()
     
     def _init_db(self):
@@ -202,6 +364,33 @@ class MultiModalScreeningService:
             return screening_result
         except Exception as e:
             logger.error(f"Voice screening failed: {e}")
+            return {"error": str(e)}
+    
+    def screen_candidate_from_audio(self, student_id: int, audio_file_path: str) -> Dict:
+        """Screen candidate from audio file (WhatsApp voice note, etc.)"""
+        try:
+            logger.info(f"Processing audio file for student {student_id}: {audio_file_path}")
+            
+            # Transcribe audio
+            transcript = self.speech_service.transcribe_audio_file(audio_file_path)
+            
+            if not transcript:
+                logger.warning(f"Could not transcribe audio for student {student_id}")
+                return {"error": "Audio transcription failed", "student_id": student_id}
+            
+            logger.info(f"Transcription complete: {len(transcript)} characters")
+            
+            # Screen using transcript
+            result = self.screen_candidate_voice(student_id, transcript)
+            
+            # Add media path to result
+            if "error" not in result:
+                result["media_path"] = audio_file_path
+                result["submission_type"] = "whatsapp_voice" if "whatsapp" in audio_file_path.lower() else "voice_note"
+            
+            return result
+        except Exception as e:
+            logger.error(f"Audio screening failed: {e}")
             return {"error": str(e)}
     
     def _calculate_fit_scores(self, soft_skills: Dict, student_id: int) -> Tuple[str, float, List[str]]:
