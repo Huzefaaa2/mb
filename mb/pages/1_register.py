@@ -811,9 +811,107 @@ with tab2:
                     logger.error(f"Registration error: {e}")
 
 # ============================================
-# TAB 3: CONFIRMATION (PLACEHOLDER)
+# TAB 3: CONFIRMATION
 # ============================================
 
 with tab3:
     st.subheader("Step 3: Registration Confirmation")
-    st.info("👆 Please complete the registration form above first.")
+    
+    # Check if registration was just completed
+    if "registration_data" in st.session_state and st.session_state.registration_data:
+        reg_data = st.session_state.registration_data
+        student_data = reg_data.get("student_data", {})
+        
+        # Display confirmation header
+        st.success("✅ Registration Completed Successfully!")
+        st.balloons()
+        
+        st.markdown("---")
+        
+        # Display credentials and IDs
+        st.subheader("📋 Your Registration Details")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Student ID", reg_data.get("student_id", "N/A"))
+        
+        with col2:
+            st.metric("Login ID", reg_data.get("login_id", "N/A"))
+        
+        with col3:
+            st.metric("User ID", reg_data.get("user_id", "N/A"))
+        
+        st.markdown("---")
+        
+        # Personal information
+        st.subheader("👤 Personal Information")
+        
+        info_col1, info_col2 = st.columns(2)
+        
+        with info_col1:
+            st.write(f"**Full Name**: {student_data.get('full_name', 'N/A')}")
+            st.write(f"**Email**: {student_data.get('email', 'N/A')}")
+            st.write(f"**Phone**: {student_data.get('phone_number', 'N/A')}")
+            st.write(f"**Date of Birth**: {student_data.get('date_of_birth', 'N/A')}")
+        
+        with info_col2:
+            st.write(f"**Gender**: {student_data.get('gender', 'N/A')}")
+            st.write(f"**Education Level**: {student_data.get('education_level', 'N/A')}")
+            st.write(f"**Location**: {student_data.get('location', 'N/A')}")
+            st.write(f"**Career Interest**: {student_data.get('career_interests', 'N/A')}")
+        
+        st.markdown("---")
+        
+        # ID Card Display
+        st.subheader("🎫 Your ID Card")
+        
+        if reg_data.get("id_card_png"):
+            st.image(reg_data["id_card_png"], use_column_width=True, caption="Your Magic Bus Compass ID Card")
+        
+        st.markdown("---")
+        
+        # Login credentials reminder
+        st.warning(f"""
+        **Important: Keep These Credentials Safe**
+        
+        - **Login ID**: {reg_data.get("login_id", "N/A")}
+        - **Password Hint**: {reg_data.get("password_hint", "N/A")}
+        - **Student ID**: {reg_data.get("student_id", "N/A")}
+        
+        You can now login using your Login ID and the password you created.
+        """)
+        
+        st.markdown("---")
+        
+        # Download options
+        st.subheader("📥 Download Your Documents")
+        
+        col_pdf, col_dash = st.columns(2)
+        
+        with col_pdf:
+            if reg_data.get("id_card_pdf"):
+                st.download_button(
+                    label="📄 Download ID Card (PDF)",
+                    data=reg_data["id_card_pdf"],
+                    file_name=f"{reg_data.get('student_id', 'id_card')}.pdf",
+                    mime="application/pdf"
+                )
+        
+        with col_dash:
+            if st.button("→ Go to Youth Dashboard", use_container_width=True):
+                st.switch_page("pages/2_youth_dashboard.py")
+        
+        st.markdown("---")
+        
+        # Next steps
+        st.info("""
+        **Next Steps:**
+        1. Go to Youth Dashboard to view your profile
+        2. Complete the Career Fit Survey to get personalized recommendations
+        3. Start your learning modules
+        4. Track your progress and earn badges
+        """)
+    
+    else:
+        st.info("👆 Please complete the registration form in Step 1 first, then submit it to see your confirmation details here.")
