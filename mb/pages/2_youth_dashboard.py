@@ -12,7 +12,10 @@ import logging
 import json
 
 # Import custom modules
-from gamification import check_and_award_badges, get_user_badges, get_user_streak, get_motivational_message, update_streak
+import sys
+from pathlib import Path as PathlibPath
+sys.path.insert(0, str(PathlibPath(__file__).parent.parent))
+from services.gamification import check_and_award_badges, get_user_badges, get_user_streak, get_motivational_message, update_streak
 from job_scraper import fetch_jobs
 from resume_matcher import match_resume_to_job, get_quick_match_score
 from interview_bot import simulate_interview
