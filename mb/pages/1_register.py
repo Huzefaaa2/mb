@@ -804,7 +804,7 @@ with tab2:
                             
                             st.success("✅ Registration successful! Generating your ID card...")
                             st.balloons()
-                            st.switch_page("pages/2_confirmation.py")
+                            st.switch_page("pages/2_youth_dashboard.py")
                 
                 except Exception as e:
                     st.error(f"❌ Registration failed: {str(e)}")
